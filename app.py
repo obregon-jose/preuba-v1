@@ -1,7 +1,6 @@
 import tkinter as tk
 import threading
 import urllib.request
-import urllib.error
 import json
 import os
 import sys
@@ -13,18 +12,16 @@ GITHUB_USER = "obregon-jose"
 GITHUB_REPO = "p-v1"
 # ══════════════════════════════════════════════════════
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 
-# GitHub intenta rama 'main' y si falla intenta 'master'
 VERSION_URL_MAIN   = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/version.json"
 VERSION_URL_MASTER = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/master/version.json"
 EXE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/latest/download/MiApp.exe"
 
 
-# ─── Lógica de actualización ──────────────────────────────────────────────────
+# ─── Lógica de actualización ─────────────────────────────────────────────────
 
 def get_latest_version():
-    """Intenta obtener version.json desde main o master."""
     for url in [VERSION_URL_MAIN, VERSION_URL_MASTER]:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "MiApp-Updater/1.0"})
@@ -33,19 +30,15 @@ def get_latest_version():
                 return data.get("version", None)
         except Exception:
             continue
-    return None  # no se pudo conectar
+    return None
 
 
 def check_for_updates(root, status_label):
-    """Se ejecuta en hilo secundario."""
     latest = get_latest_version()
-
     if latest is None:
-        # Sin internet o repo mal configurado
         root.after(0, lambda: status_label.config(
             text="⚠️ No se pudo verificar actualizaciones", fg="#e67e22"))
         return
-
     if latest != APP_VERSION:
         root.after(0, lambda: ask_update(latest, root, status_label))
     else:
@@ -54,77 +47,52 @@ def check_for_updates(root, status_label):
 
 
 def ask_update(new_version, root, status_label):
-    """Muestra ventana de diálogo al usuario."""
     win = tk.Toplevel(root)
     win.title("Nueva versión disponible")
     win.geometry("380x170")
     win.resizable(False, False)
     win.grab_set()
-    win.configure(bg="#ffffff")
-    # Centrar sobre la ventana principal
     win.transient(root)
+    win.configure(bg="#ffffff")
 
     tk.Label(win, text="🚀 ¡Actualización disponible!",
              font=("Segoe UI", 13, "bold"), bg="#ffffff", fg="#222").pack(pady=(18, 6))
-
     tk.Label(win,
              text=f"Versión actual:  {APP_VERSION}\n"
                   f"Nueva versión:   {new_version}\n\n"
                   f"Se instalará automáticamente.",
-             font=("Segoe UI", 10), bg="#ffffff", fg="#555",
-             justify="center").pack()
+             font=("Segoe UI", 10), bg="#ffffff", fg="#555", justify="center").pack()
 
     btn_frame = tk.Frame(win, bg="#ffffff")
     btn_frame.pack(pady=12)
 
     tk.Button(btn_frame, text="✅  Actualizar ahora",
               font=("Segoe UI", 10, "bold"),
-              bg="#4CAF50", fg="white", relief="flat",
-              padx=16, pady=8,
+              bg="#4CAF50", fg="white", relief="flat", padx=16, pady=8,
               command=lambda: [win.destroy(), do_update(root, status_label)]
               ).pack(side="left", padx=10)
 
     tk.Button(btn_frame, text="Ahora no",
               font=("Segoe UI", 10),
-              bg="#e0e0e0", fg="#333", relief="flat",
-              padx=12, pady=8,
-              command=win.destroy
-              ).pack(side="left", padx=10)
+              bg="#e0e0e0", fg="#333", relief="flat", padx=12, pady=8,
+              command=win.destroy).pack(side="left", padx=10)
 
 
 def do_update(root, status_label):
-    """Descarga el nuevo .exe y lo reemplaza usando un .bat auxiliar."""
     status_label.config(text="⬇️  Iniciando descarga...", fg="#2980b9")
 
     def download():
         try:
-            # Ruta del .exe en ejecución
-            if getattr(sys, 'frozen', False):
-                # Ejecutando como .exe compilado por PyInstaller
-                exe_path = sys.executable
-            else:
-                # Ejecutando como script .py (para pruebas)
-                exe_path = os.path.abspath(__file__)
-
+            exe_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
             tmp_path = exe_path + ".new"
 
-            # ── Descargar nuevo ejecutable ──────────────────────
-            def progress(block_num, block_size, total_size):
-                if total_size > 0:
-                    pct = min(int(block_num * block_size * 100 / total_size), 100)
-                    root.after(0, lambda p=pct: status_label.config(
-                        text=f"⬇️  Descargando... {p}%", fg="#2980b9"))
-
-            req = urllib.request.Request(
-                EXE_URL, headers={"User-Agent": "MiApp-Updater/1.0"})
-            # urlretrieve no acepta Request directamente, usamos urlopen + write
+            req = urllib.request.Request(EXE_URL, headers={"User-Agent": "MiApp-Updater/1.0"})
             with urllib.request.urlopen(req, timeout=60) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
-                chunk = 8192
                 with open(tmp_path, "wb") as f:
                     while True:
-                        buf = resp.read(chunk)
+                        buf = resp.read(8192)
                         if not buf:
                             break
                         f.write(buf)
@@ -135,9 +103,8 @@ def do_update(root, status_label):
                                 text=f"⬇️  Descargando... {p}%", fg="#2980b9"))
 
             root.after(0, lambda: status_label.config(
-                text="⚙️  Instalando actualización...", fg="#8e44ad"))
+                text="⚙️  Instalando...", fg="#8e44ad"))
 
-            # ── Script .bat: espera, reemplaza, reinicia ─────────
             bat_path = exe_path + "_update.bat"
             with open(bat_path, "w") as f:
                 f.write(
@@ -147,43 +114,101 @@ def do_update(root, status_label):
                     f"start \"\" \"{exe_path}\"\n"
                     f"del \"%~f0\"\n"
                 )
-
-            subprocess.Popen(
-                f'cmd /c "{bat_path}"',
-                shell=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
+            subprocess.Popen(f'cmd /c "{bat_path}"', shell=True,
+                             creationflags=subprocess.CREATE_NO_WINDOW)
             root.after(800, root.destroy)
 
         except Exception as e:
             root.after(0, lambda: status_label.config(
-                text=f"⚠️ Error al actualizar: {e}", fg="#e74c3c"))
+                text=f"⚠️ Error: {e}", fg="#e74c3c"))
 
     threading.Thread(target=download, daemon=True).start()
 
 
-# ─── Interfaz versión 1 ───────────────────────────────────────────────────────
+# ─── Calculadora ─────────────────────────────────────────────────────────────
+
+expression = ""
+
+def press(key, display_var):
+    global expression
+    if key == "C":
+        expression = ""
+    elif key == "=":
+        try:
+            expression = str(eval(expression))
+        except Exception:
+            expression = "Error"
+    elif key == "⌫":
+        expression = expression[:-1]
+    else:
+        expression += str(key)
+    display_var.set(expression or "0")
+
+
+# ─── Interfaz versión 2 ───────────────────────────────────────────────────────
 
 def main():
     root = tk.Tk()
-    root.title("Mi Aplicación")
-    root.geometry("340x210")
+    root.title("Mi Aplicación v2")
+    root.geometry("340x500")
     root.resizable(False, False)
-    root.configure(bg="#f0f4f8")
+    root.configure(bg="#1e1e2e")
 
-    tk.Label(root, text="🖥️ Mi Aplicación",
-             font=("Segoe UI", 18, "bold"),
-             bg="#f0f4f8", fg="#222").pack(pady=28)
+    # Encabezado
+    header = tk.Frame(root, bg="#2a2a3e", pady=8)
+    header.pack(fill="x")
+    tk.Label(header, text="🖥️ Mi Aplicación",
+             font=("Segoe UI", 13, "bold"), bg="#2a2a3e", fg="white").pack()
+    tk.Label(header, text=f"Versión: {APP_VERSION}",
+             font=("Segoe UI", 9), bg="#2a2a3e", fg="#aaa").pack()
 
-    tk.Label(root, text=f"Versión: {APP_VERSION}",
-             font=("Segoe UI", 12),
-             bg="#f0f4f8", fg="#555").pack()
+    # Display
+    display_var = tk.StringVar(value="0")
+    tk.Entry(root, textvariable=display_var,
+             font=("Segoe UI", 22, "bold"), justify="right",
+             bd=0, bg="#12121f", fg="white",
+             insertbackground="white", state="readonly",
+             readonlybackground="#12121f"
+             ).pack(fill="x", padx=10, pady=10, ipady=12)
 
+    # Botones
+    BUTTONS = [
+        ["C",  "⌫", "%",  "/"],
+        ["7",  "8",  "9",  "*"],
+        ["4",  "5",  "6",  "-"],
+        ["1",  "2",  "3",  "+"],
+        ["0",  ".",  "=",   ""],
+    ]
+    COLORS = {
+        "=": "#4CAF50", "/": "#ff9800", "*": "#ff9800",
+        "-": "#ff9800", "+": "#ff9800",
+        "C": "#e53935", "⌫": "#546e7a", "%": "#546e7a",
+    }
+
+    btn_frame = tk.Frame(root, bg="#1e1e2e")
+    btn_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+    for row_keys in BUTTONS:
+        row = tk.Frame(btn_frame, bg="#1e1e2e")
+        row.pack(fill="x", pady=3)
+        for key in row_keys:
+            if key == "":
+                tk.Label(row, bg="#1e1e2e", width=7).pack(side="left", padx=3)
+                continue
+            w = 14 if key == "0" else 7
+            tk.Button(row, text=key,
+                      font=("Segoe UI", 13, "bold"),
+                      bg=COLORS.get(key, "#2a2a3e"),
+                      fg="white", activebackground="#555",
+                      relief="flat", width=w, height=2,
+                      command=lambda k=key: press(k, display_var)
+                      ).pack(side="left", padx=3)
+
+    # Status
     status = tk.Label(root, text="🔍 Buscando actualizaciones...",
-                      font=("Segoe UI", 9), bg="#f0f4f8", fg="#aaa")
-    status.pack(pady=18)
+                      font=("Segoe UI", 8), fg="#666", bg="#1e1e2e")
+    status.pack(pady=4)
 
-    # Lanza la verificación en hilo separado para no bloquear la UI
     threading.Thread(
         target=check_for_updates,
         args=(root, status),
