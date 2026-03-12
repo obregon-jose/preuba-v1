@@ -6,7 +6,7 @@
 [Setup]
 AppName=Mi Aplicación
 AppVersion=1.0.0
-AppPublisher=Tu Nombre
+AppPublisher=José Obregón
 DefaultDirName={autopf}\MiApp
 DefaultGroupName=Mi Aplicación
 OutputBaseFilename=setup_miapp
